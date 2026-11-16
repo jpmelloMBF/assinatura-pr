@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Assinar revisão · mbtech</title>
+<style>
+  :root {
+    color-scheme: light;
+    --azul: #0D70F2;
+    --azul-escuro: #0B5FCE;
+    --preto: #0F0F0F;
+    --texto: #3F3F46;
+    --apagado: #71717A;
+    --borda: #D4D4D8;
+    --fonte: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 16px; background: #F4F4F5;
+    font-family: var(--fonte); color: var(--texto); line-height: 1.6;
+  }
+  .caixa {
+    max-width: 600px; margin: 0 auto; background: #fff;
+    border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
+  .topo { background: var(--preto); padding: 22px 32px; }
+  .marca {
+    font-family: Arial, Helvetica, sans-serif; font-size: 22px; font-weight: 700;
+    letter-spacing: -.03em; color: #fff;
+  }
+  .marca span { color: #6DA9FA; }
+  .conteudo { padding: 32px; }
+
+  h1 { margin: 0 0 6px; font-size: 21px; line-height: 1.3; color: var(--preto); }
+  .sub { margin: 0 0 28px; font-size: 14px; color: var(--apagado); }
+  a { color: var(--azul); }
+
+  label { display: block; margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--preto); }
+  .dica { margin: 0 0 8px; font-size: 13px; color: var(--apagado); }
+  .campo { margin: 0 0 24px; }
+  input, textarea {
+    width: 100%; padding: 12px 14px; font: inherit; font-size: 15px;
+    color: var(--preto); background: #fff; border: 1px solid var(--borda); border-radius: 8px;
+  }
+  input:focus, textarea:focus { outline: 2px solid var(--azul); outline-offset: -1px; border-color: var(--azul); }
+  textarea { min-height: 150px; resize: vertical; }
+
+  button {
+    width: 100%; padding: 15px; font: inherit; font-size: 15px; font-weight: 700;
+    color: #fff; background: var(--azul); border: 0; border-radius: 8px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: var(--azul-escuro); }
+  button:disabled { opacity: .55; cursor: default; }
+
+  .aviso { margin: 20px 0 0; font-size: 13px; color: var(--apagado); }
+  .faixa { padding: 14px 16px; margin: 0 0 24px; border-radius: 8px; font-size: 14px; }
+  .faixa.erro { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; }
+  .faixa.ok   { background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; }
+  .citacao {
+    margin: 8px 0 0; padding: 14px 16px; background: #FAFAFA;
+    border-left: 3px solid var(--azul); white-space: pre-wrap; font-size: 15px;
+  }
+  .carregando { padding: 48px 0; text-align: center; color: var(--apagado); }
+</style>
+</head>
+<body>
+  <div class="caixa">
+    <div class="topo"><span class="marca">mb<span>tech.</span></span></div>
+    <div class="conteudo" id="app">
+      <div class="carregando">Carregando…</div>
+    </div>
+  </div>
+
+<script>
+// A API fica na Edge Function do Supabase; esta página só desenha e envia.
+// O token vem na URL do email e é o que autentica a assinatura.
+const API = "https://vjgigusmkzyheowpaaia.supabase.co/functions/v1/assinatura";
+const app = document.getElementById("app");
+const token = new URLSearchParams(location.search).get("t") || "";
+
+const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+const quando = (iso) => {
+  try { return new Date(iso).toLocaleString("pt-BR"); } catch { return ""; }
+};
+
+const cabecalho = (pr) => `
+  <h1>PR #${esc(pr.numero)} — ${esc(pr.titulo) || "sem título"}</h1>
+  <p class="sub">${esc(pr.repositorio)} · por ${esc(pr.autor_login) || "autor desconhecido"}${
+    pr.url ? ` · <a href="${esc(pr.url)}" target="_blank" rel="noopener">ver no GitHub</a>` : ""
+  }</p>`;
+
+function semLink(mensagem) {
+  app.innerHTML = `
+    <h1>Link inválido ou expirado</h1>
+    <p class="sub">${esc(mensagem)}</p>`;
+}
+
+function jaAssinado(pr, aviso) {
+  app.innerHTML = `
+    ${cabecalho(pr)}
+    <div class="faixa ok">Assinado por <strong>${esc(pr.nome_assinado)}</strong>${
+      pr.assinado_em ? ` em ${esc(quando(pr.assinado_em))}` : ""
+    }.</div>
+    ${aviso ? `<p class="sub">${esc(aviso)}</p>` : ""}
+    ${pr.comentario
+      ? `<label>Parecer registrado</label><div class="citacao">${esc(pr.comentario)}</div>`
+      : `<p class="sub">Assinado sem comentários.</p>`}
+    ${pr.url
+      ? `<p class="aviso">Falta o <strong>Approve</strong> no GitHub para liberar o merge:
+           <a href="${esc(pr.url)}" target="_blank" rel="noopener">abrir o PR</a>.</p>`
+      : ""}`;
+}
+
+function formulario(pr, erro) {
+  app.innerHTML = `
+    ${cabecalho(pr)}
+    ${erro ? `<div class="faixa erro">${esc(erro)}</div>` : ""}
+    <form id="f">
+      <div class="campo">
+        <label for="nome">Seu nome completo</label>
+        <p class="dica">Vale como assinatura da revisão e fica registrado com data e hora.</p>
+        <input id="nome" name="nome" required autocomplete="name" placeholder="Nome e sobrenome">
+      </div>
+      <div class="campo">
+        <label for="comentario">Seu parecer sobre o PR</label>
+        <p class="dica">Vai por email para ${esc(pr.autor_login) || "o autor"}.
+          Opcional, mas é o que ele vai ler.</p>
+        <textarea id="comentario" name="comentario"
+          placeholder="O que ficou bom, o que precisa mudar, o que te preocupa."></textarea>
+      </div>
+      <button type="submit" id="enviar">Assinar a revisão</button>
+      <p class="aviso">A assinatura não substitui o <em>Approve</em> no GitHub,
+        que continua sendo o que libera o merge.</p>
+    </form>`;
+
+  document.getElementById("f").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const botao = document.getElementById("enviar");
+    const nome = document.getElementById("nome").value.trim();
+    const comentario = document.getElementById("comentario").value.trim();
+
+    if (nome.split(/\s+/).length < 2) {
+      return formulario(pr, "Escreva o nome completo (nome e sobrenome).");
+    }
+
+    botao.disabled = true;
+    botao.textContent = "Registrando…";
+    try {
+      const resp = await fetch(API, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ t: token, nome, comentario }),
+      });
+      const r = await resp.json();
+
+      if (r.ok) return jaAssinado(r.pr, r.aviso);
+      if (r.erro === "ja_assinado" && r.pr) return jaAssinado(r.pr);
+      if (r.erro === "nome_incompleto") {
+        return formulario(pr, "Escreva o nome completo (nome e sobrenome).");
+      }
+      formulario(pr, "Não consegui registrar agora. Tente de novo em instantes.");
+    } catch {
+      formulario(pr, "Falha de conexão. Verifique a rede e tente de novo.");
+    }
+  });
+}
+
+(async () => {
+  if (!token) return semLink("O endereço não traz o código da assinatura. Abra pelo link do email.");
+  try {
+    const resp = await fetch(`${API}?t=${encodeURIComponent(token)}`);
+    const r = await resp.json();
+    if (!r.ok) return semLink("Este link de assinatura não existe. Peça um novo ao time.");
+    return r.pr.status === "assinado" ? jaAssinado(r.pr) : formulario(r.pr);
+  } catch {
+    semLink("Não consegui falar com o servidor. Tente de novo em instantes.");
+  }
+})();
+</script>
+</body>
+</html>
